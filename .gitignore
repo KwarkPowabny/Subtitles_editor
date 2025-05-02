@@ -1,0 +1,40 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variable files
+.env
+.env.*
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Output subtitle files (optional — ignore if user-generated)
+*.srt
+*.vtt
+*.txt
+
+# Logs and debug files
+*.log
+
+# Compiled C extensions
+*.so
+
+# macOS metadata
+*.DS_Store
+
+# Backup files
+*~
+*.bak
