@@ -15,60 +15,60 @@ def parse_timestamp(ts: str) -> timedelta:
     s, ms = s.split('.')
     return timedelta(hours=int(h), minutes=int(m), seconds=int(s), milliseconds=int(ms))
 
-def read_cut_ranges(cuts_path: str) -> list[tuple[timedelta, timedelta]]:
-    ranges = []
-    with open(cuts_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            # przyjmijmy format "start --> end" lub "start-end"
-            if '-->' in line:
-                start_s, end_s = line.split('-->')
-            elif '-' in line:
-                start_s, end_s = line.split('-', 1)
-            else:
-                raise ValueError(f"Nieznany format zakresu: {line}")
-            start = parse_timestamp(start_s.strip())
-            end   = parse_timestamp(end_s.strip())
-            if end <= start:
-                raise ValueError(f"End musi być po start: {line}")
-            ranges.append((start, end))
-    # posortuj rosnąco po starcie
-    return sorted(ranges, key=lambda x: x[0])
+from datetime import timedelta
 
-def apply_cut_ranges(subs, fmt, cut_ranges):
-    # oblicz kumulatywny shift dla każdej daty
-    # cut_ranges = [(t0,t1), (t2,t3), ...]
+def apply_cut_ranges(subs, source_fmt, cut_ranges):
     def total_cut_before(t: timedelta) -> timedelta:
         total = timedelta()
         for start, end in cut_ranges:
             if t <= start:
                 break
-            # jeżeli napis zaczyna się po end — odejmujemy cały fragment
-            cut = min(end, t) - start if t > start else timedelta()
-            total += max(timedelta(), cut)
+            # jeżeli t > start, to do shift wliczamy fragment cięcia od start do min(end, t)
+            total += min(end, t) - start
         return total
 
     new_subs = []
     for sub in subs:
-        # wydobądź czasy start/end w timedelta
-        if fmt == 'srt':
-            t0, t1 = sub.start, sub.end
-        else:  # vtt lub po konwersji do dictów
-            t0 = parse_timestamp(sub['start'])
-            t1 = parse_timestamp(sub['end'])
+        # wyciągnij oryginalne czasy
+        if source_fmt == 'srt':
+            orig_t0, orig_t1 = sub.start, sub.end
+        else:
+            orig_t0 = parse_timestamp(sub['start'])
+            orig_t1 = parse_timestamp(sub['end'])
 
-        # czy nakłada się na którakolwiek z pociętych sekcji?
-        overlap = any(not (t1 <= start or t0 >= end) for start, end in cut_ranges)
-        if overlap:
-            continue  # usuwamy ten napis
+        t0, t1 = orig_t0, orig_t1
+        remove = False
 
+        # sprawdź po kolei każde cięcie
+        for start, end in cut_ranges:
+            # jeśli cały napis jest wewnątrz zakresu cięcia -> usuń
+            if start <= t0 and t1 <= end:
+                remove = True
+                break
+
+            # częściowe nachodzenie na początek cięcia: przycinamy koniec napisu
+            if t0 < start < t1:
+                t1 = start
+
+            # częściowe nachodzenie na koniec cięcia: przycinamy początek napisu
+            if t0 < end < t1:
+                t0 = end
+
+            # jeżeli po przycięciach długość <= 0, to traktujemy jako usunięty
+            if t1 <= t0:
+                remove = True
+                break
+
+        if remove:
+            continue
+
+        # teraz obliczamy przesunięcie dla przyciętego punktu startu
         shift = total_cut_before(t0)
         new_t0 = t0 - shift
         new_t1 = t1 - shift
 
-        # zapisz zaktualizowane czasy
-        if fmt == 'srt':
+        # zapisujemy wynik
+        if source_fmt == 'srt':
             sub.start, sub.end = new_t0, new_t1
             new_subs.append(sub)
         else:
@@ -77,7 +77,7 @@ def apply_cut_ranges(subs, fmt, cut_ranges):
             new_subs.append(sub)
 
     return new_subs
-#koniec poprawki z 26/06
+
 def parse_vtt_time(t):
     h, m, s = t.split(':')
     s, ms = s.split('.')
